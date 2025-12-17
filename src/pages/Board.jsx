@@ -6,6 +6,7 @@ export default function Board({ user }) {
   const [subjects, setSubjects] = useState([])
   const [plans, setPlans] = useState([])
   const [selectedPlan, setSelectedPlan] = useState('')
+  const [selectedPlanData, setSelectedPlanData] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
@@ -17,6 +18,7 @@ export default function Board({ user }) {
       fetchSubjectsByPlan()
     } else {
       fetchAllSubjects()
+      setSelectedPlanData(null)
     }
   }, [selectedPlan])
 
@@ -52,6 +54,17 @@ export default function Board({ user }) {
 
   async function fetchSubjectsByPlan() {
     try {
+      // Fetch plan data
+      const { data: planData, error: planError } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('id', selectedPlan)
+        .single()
+      
+      if (planError) throw planError
+      setSelectedPlanData(planData)
+
+      // Fetch plan subjects
       const { data, error } = await supabase
         .from('plan_subjects')
         .select('subjects(*)')
@@ -66,15 +79,6 @@ export default function Board({ user }) {
     } catch (error) {
       console.error('Error fetching plan subjects:', error)
     }
-  }
-
-  function handleUpdate() {
-    if (selectedPlan) {
-      fetchSubjectsByPlan()
-    } else {
-      fetchAllSubjects()
-    }
-    setRefreshKey(prev => prev + 1)
   }
 
   return (
@@ -95,14 +99,24 @@ export default function Board({ user }) {
             <option key={plan.id} value={plan.id}>{plan.name}</option>
           ))}
         </select>
-        {selectedPlan && (
-          <p className="text-sm text-gray-600 mt-2">
-            Mostrando matérias do plano selecionado, organizadas por prioridade (peso)
-          </p>
+        {selectedPlan && selectedPlanData && (
+          <div className="mt-3 p-3 bg-indigo-50 rounded-lg">
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold">Tempo semanal disponível:</span> {selectedPlanData.weekly_hours}h
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              Matérias organizadas por prioridade (peso). O cronograma distribui o tempo disponível proporcionalmente ao peso de cada matéria.
+            </p>
+          </div>
         )}
       </div>
       
-      <StudySchedule key={refreshKey} subjects={subjects} userId={user.id} />
+      <StudySchedule 
+        key={refreshKey} 
+        subjects={subjects} 
+        userId={user.id}
+        weeklyHours={selectedPlanData?.weekly_hours || null}
+      />
     </div>
   )
 }

@@ -7,8 +7,12 @@ export default function Sessions({ user }) {
   const [topics, setTopics] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingSession, setEditingSession] = useState(null)
+  const [showChronometerModal, setShowChronometerModal] = useState(false)
+  const [currentSessionId, setCurrentSessionId] = useState(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [targetSeconds, setTargetSeconds] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
-  const [sessionStartTime, setSessionStartTime] = useState(null)
+  const [hasAlerted, setHasAlerted] = useState(false)
   const intervalRef = useRef(null)
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -32,9 +36,20 @@ export default function Sessions({ user }) {
   }, [])
 
   useEffect(() => {
-    if (isRunning && sessionStartTime) {
+    if (isRunning) {
       intervalRef.current = setInterval(() => {
-        updateElapsedTime()
+        setElapsedSeconds(prev => {
+          const newValue = prev + 1
+          
+          // Check if reached target time
+          if (newValue >= targetSeconds && !hasAlerted && targetSeconds > 0) {
+            setHasAlerted(true)
+            setIsRunning(false)
+            alert('⏰ Tempo da sessão concluído!')
+          }
+          
+          return newValue
+        })
       }, 1000)
     } else {
       if (intervalRef.current) {
@@ -46,79 +61,36 @@ export default function Sessions({ user }) {
         clearInterval(intervalRef.current)
       }
     }
-  }, [isRunning, sessionStartTime])
+  }, [isRunning, targetSeconds, hasAlerted])
 
-  function updateElapsedTime() {
-    if (!sessionStartTime) return
-    
-    const now = new Date()
-    const start = new Date(sessionStartTime)
-    const elapsed = Math.floor((now - start) / 1000)
-    
-    const hours = Math.floor(elapsed / 3600)
-    const minutes = Math.floor((elapsed % 3600) / 60)
-    const seconds = elapsed % 60
-    
-    const endTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-    
-    setFormData(prev => ({
-      ...prev,
-      end_time: endTime
-    }))
+  function formatTime(totalSeconds) {
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
   }
 
-  function startSession() {
-    if (!formData.subject_id) {
-      alert('Selecione uma matéria primeiro')
-      return
-    }
-    
-    const now = new Date()
-    const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-    
-    setSessionStartTime(now)
-    setIsRunning(true)
-    setShowForm(true)
-    setFormData(prev => ({
-      ...prev,
-      date: now.toISOString().split('T')[0],
-      start_time: startTime,
-      end_time: startTime
-    }))
-  }
-
-  function pauseSession() {
-    setIsRunning(false)
-  }
-
-  function resumeSession() {
-    if (sessionStartTime) {
-      setIsRunning(true)
-    }
-  }
-
-  function stopSession() {
-    setIsRunning(false)
-    updateElapsedTime()
-  }
-
-  function getElapsedTime() {
-    if (!formData.start_time || !formData.end_time) return '00:00:00'
-    
-    const [startHour, startMin] = formData.start_time.split(':').map(Number)
-    const [endHour, endMin] = formData.end_time.split(':').map(Number)
+  function getSessionDuration(startTime, endTime) {
+    const [startHour, startMin] = startTime.split(':').map(Number)
+    const [endHour, endMin] = endTime.split(':').map(Number)
     
     const startSeconds = startHour * 3600 + startMin * 60
     const endSeconds = endHour * 3600 + endMin * 60
     const elapsed = endSeconds - startSeconds
     
-    if (elapsed < 0) return '00:00:00'
-    
-    const hours = Math.floor(elapsed / 3600)
-    const minutes = Math.floor((elapsed % 3600) / 60)
-    const seconds = elapsed % 60
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+    return elapsed > 0 ? elapsed : 0
+  }
+
+  function closeChronometer() {
+    setShowChronometerModal(false)
+    setIsRunning(false)
+    setElapsedSeconds(0)
+    setTargetSeconds(0)
+    setCurrentSessionId(null)
+    setHasAlerted(false)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+    }
   }
 
   async function fetchSessions() {
@@ -181,12 +153,24 @@ export default function Sessions({ user }) {
           .eq('id', editingSession.id)
         
         if (error) throw error
+        alert('Sessão atualizada com sucesso!')
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('study_sessions_detailed')
           .insert([sessionData])
+          .select()
+          .single()
         
         if (error) throw error
+        
+        // Calculate session duration and show chronometer modal
+        const duration = getSessionDuration(formData.start_time, formData.end_time)
+        setTargetSeconds(duration)
+        setElapsedSeconds(0) // Start from 00:00
+        setHasAlerted(false)
+        setCurrentSessionId(data.id)
+        setShowChronometerModal(true)
+        setIsRunning(true)
       }
 
       resetForm()
@@ -245,11 +229,6 @@ export default function Sessions({ user }) {
     })
     setEditingSession(null)
     setShowForm(false)
-    setIsRunning(false)
-    setSessionStartTime(null)
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-    }
   }
 
   const filteredTopics = topics.filter(t => t.subject_id === formData.subject_id)
@@ -266,110 +245,54 @@ export default function Sessions({ user }) {
         </button>
       </div>
 
-      {/* Chronometer Section */}
-      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Cronômetro de Sessão</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Matéria</label>
-            <select
-              value={formData.subject_id}
-              onChange={(e) => setFormData({ ...formData, subject_id: e.target.value, topic_id: '' })}
-              disabled={isRunning}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
-            >
-              <option value="">Selecione</option>
-              {subjects.map(subject => (
-                <option key={subject.id} value={subject.id}>{subject.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tópico (Opcional)</label>
-            <select
-              value={formData.topic_id}
-              onChange={(e) => setFormData({ ...formData, topic_id: e.target.value })}
-              disabled={isRunning}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
-            >
-              <option value="">Nenhum</option>
-              {topics.filter(t => t.subject_id === formData.subject_id).map(topic => (
-                <option key={topic.id} value={topic.id}>{topic.title}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Conteúdo</label>
-            <select
-              value={formData.content_type}
-              onChange={(e) => setFormData({ ...formData, content_type: e.target.value })}
-              disabled={isRunning}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
-            >
-              {contentTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="text-center mb-6">
-          <div className="text-6xl font-mono font-bold text-indigo-600 mb-2">
-            {getElapsedTime()}
-          </div>
-          {formData.start_time && (
-            <div className="text-sm text-gray-600">
-              Início: {formData.start_time} {formData.end_time && `• Fim: ${formData.end_time}`}
+      {/* Chronometer Modal */}
+      {showChronometerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+              ⏱️ Sessão Registrada!
+            </h2>
+            
+            <div className="text-center mb-6">
+              <div className={`text-7xl font-mono font-bold mb-4 ${
+                elapsedSeconds >= targetSeconds ? 'text-green-600' : 'text-indigo-600'
+              }`}>
+                {formatTime(elapsedSeconds)}
+              </div>
+              <p className="text-gray-600 mb-2">
+                {elapsedSeconds >= targetSeconds ? '✓ Sessão concluída!' : 'Tempo decorrido'}
+              </p>
+              <p className="text-sm text-gray-500">
+                Meta: {formatTime(targetSeconds)}
+              </p>
+              {elapsedSeconds < targetSeconds && (
+                <p className="text-sm text-gray-500">
+                  Faltam: {formatTime(targetSeconds - elapsedSeconds)}
+                </p>
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="flex gap-2">
-          {!isRunning && !sessionStartTime && (
-            <button
-              onClick={startSession}
-              className="flex-1 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
-            >
-              ▶️ Iniciar Sessão
-            </button>
-          )}
-          {isRunning && (
-            <button
-              onClick={pauseSession}
-              className="flex-1 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-semibold"
-            >
-              ⏸️ Pausar
-            </button>
-          )}
-          {!isRunning && sessionStartTime && (
-            <>
+            <div className="flex gap-3">
               <button
-                onClick={resumeSession}
-                className="flex-1 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
+                onClick={() => setIsRunning(!isRunning)}
+                className={`flex-1 py-3 rounded-lg font-semibold ${
+                  isRunning
+                    ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                    : 'bg-green-500 hover:bg-green-600 text-white'
+                }`}
               >
-                ▶️ Retomar
+                {isRunning ? '⏸️ Pausar' : '▶️ Continuar'}
               </button>
               <button
-                onClick={stopSession}
-                className="flex-1 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold"
+                onClick={closeChronometer}
+                className="flex-1 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
               >
-                ⏹️ Finalizar
+                ✓ Fechar
               </button>
-            </>
-          )}
-          {sessionStartTime && (
-            <button
-              onClick={resetForm}
-              className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
-            >
-              🔄 Resetar
-            </button>
-          )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {showForm && (
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">

@@ -9,6 +9,7 @@ export default function Plan({ user }) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    weekly_hours: 20,
     subject_ids: []
   })
 
@@ -55,7 +56,8 @@ export default function Plan({ user }) {
           .from('plans')
           .update({
             name: formData.name,
-            description: formData.description
+            description: formData.description,
+            weekly_hours: formData.weekly_hours
           })
           .eq('id', editingPlan.id)
         
@@ -87,7 +89,8 @@ export default function Plan({ user }) {
           .insert([{
             user_id: user.id,
             name: formData.name,
-            description: formData.description
+            description: formData.description,
+            weekly_hours: formData.weekly_hours
           }])
           .select()
           .single()
@@ -139,13 +142,14 @@ export default function Plan({ user }) {
     setFormData({
       name: plan.name,
       description: plan.description || '',
+      weekly_hours: plan.weekly_hours || 20,
       subject_ids: subjectIds
     })
     setShowForm(true)
   }
 
   function resetForm() {
-    setFormData({ name: '', description: '', subject_ids: [] })
+    setFormData({ name: '', description: '', weekly_hours: 20, subject_ids: [] })
     setEditingPlan(null)
     setShowForm(false)
   }
@@ -200,6 +204,24 @@ export default function Plan({ user }) {
                 rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Horas Semanais Disponíveis
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="168"
+                value={formData.weekly_hours}
+                onChange={(e) => setFormData({ ...formData, weekly_hours: parseInt(e.target.value) || 20 })}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Quantas horas por semana você tem disponível para estudar?
+              </p>
             </div>
             
             <div>
@@ -262,7 +284,12 @@ export default function Plan({ user }) {
                 </button>
               </div>
             </div>
-            <p className="text-gray-600 mb-4">{plan.description}</p>
+            <p className="text-gray-600 mb-2">{plan.description}</p>
+            <div className="mb-4">
+              <span className="inline-block bg-indigo-100 text-indigo-800 text-sm px-3 py-1 rounded-full">
+                ⏰ {plan.weekly_hours || 20}h semanais
+              </span>
+            </div>
             <div className="border-t pt-4">
               <p className="text-sm font-medium text-gray-700 mb-2">Matérias:</p>
               <div className="space-y-1">

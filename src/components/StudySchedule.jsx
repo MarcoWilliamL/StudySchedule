@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function StudySchedule({ subjects }) {
+export default function StudySchedule({ subjects, userId, weeklyHours }) {
   const [schedule, setSchedule] = useState([])
   const [currentWeekStart, setCurrentWeekStart] = useState(getWeekStart(new Date()))
   const [studySessions, setStudySessions] = useState([])
@@ -38,8 +38,20 @@ export default function StudySchedule({ subjects }) {
     }
 
     const newSchedule = []
-    let subjectIndex = 0
+    
+    // Calculate time allocation based on weight
+    const totalWeight = subjects.reduce((sum, s) => sum + s.weight, 0)
+    const availableHours = weeklyHours || 28 // Default 4 hours/day * 7 days
+    
+    // Calculate hours per subject based on weight
+    const subjectHours = subjects.map(subject => ({
+      ...subject,
+      allocatedHours: (subject.weight / totalWeight) * availableHours
+    }))
 
+    // Distribute subjects across the week
+    const hoursPerDay = availableHours / 7
+    
     // Generate 7 days (current week)
     for (let i = 0; i < 7; i++) {
       const date = new Date(currentWeekStart)
@@ -52,16 +64,30 @@ export default function StudySchedule({ subjects }) {
         subjects: []
       }
 
-      // Assign 4 subjects per day (1 hour each)
-      for (let j = 0; j < 4; j++) {
-        if (subjects.length > 0) {
-          const subject = subjects[subjectIndex % subjects.length]
+      // Distribute subjects for this day based on weight
+      let remainingHours = hoursPerDay
+      let subjectIndex = i % subjects.length
+      
+      while (remainingHours > 0 && daySchedule.subjects.length < 6) {
+        const subject = subjectHours[subjectIndex % subjectHours.length]
+        const timeForSubject = Math.min(
+          Math.ceil(subject.allocatedHours / 7), // Distribute evenly across week
+          remainingHours,
+          2 // Max 2 hours per subject per day
+        )
+        
+        if (timeForSubject > 0) {
           daySchedule.subjects.push({
             ...subject,
-            timeLimit: '60 min'
+            timeLimit: `${Math.round(timeForSubject * 60)} min`
           })
-          subjectIndex++
+          remainingHours -= timeForSubject
         }
+        
+        subjectIndex++
+        
+        // Prevent infinite loop
+        if (subjectIndex > subjectHours.length * 2) break
       }
 
       newSchedule.push(daySchedule)
