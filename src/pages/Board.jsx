@@ -116,6 +116,7 @@ export default function Board({ user }) {
         subjects={subjects} 
         userId={user.id}
         weeklyHours={selectedPlanData?.weekly_hours || null}
+        planId={selectedPlan || null}
       />
     </div>
   )

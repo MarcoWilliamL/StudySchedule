@@ -5,6 +5,7 @@ export default function Sessions({ user }) {
   const [sessions, setSessions] = useState([])
   const [subjects, setSubjects] = useState([])
   const [topics, setTopics] = useState([])
+  const [plans, setPlans] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingSession, setEditingSession] = useState(null)
   const [showChronometerModal, setShowChronometerModal] = useState(false)
@@ -19,6 +20,7 @@ export default function Sessions({ user }) {
     start_time: '',
     end_time: '',
     content_type: 'PDF',
+    plan_id: '',
     subject_id: '',
     topic_id: '',
     questions_resolved: 0,
@@ -33,6 +35,7 @@ export default function Sessions({ user }) {
     fetchSessions()
     fetchSubjects()
     fetchTopics()
+    fetchPlans()
   }, [])
 
   useEffect(() => {
@@ -136,6 +139,20 @@ export default function Sessions({ user }) {
     }
   }
 
+  async function fetchPlans() {
+    try {
+      const { data, error } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('user_id', user.id)
+      
+      if (error) throw error
+      setPlans(data || [])
+    } catch (error) {
+      console.error('Error fetching plans:', error)
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     
@@ -143,6 +160,7 @@ export default function Sessions({ user }) {
       const sessionData = {
         user_id: user.id,
         ...formData,
+        plan_id: formData.plan_id || null,
         topic_id: formData.topic_id || null
       }
 
@@ -204,6 +222,7 @@ export default function Sessions({ user }) {
       start_time: session.start_time,
       end_time: session.end_time,
       content_type: session.content_type,
+      plan_id: session.plan_id || '',
       subject_id: session.subject_id,
       topic_id: session.topic_id || '',
       questions_resolved: session.questions_resolved,
@@ -220,6 +239,7 @@ export default function Sessions({ user }) {
       start_time: '',
       end_time: '',
       content_type: 'PDF',
+      plan_id: '',
       subject_id: '',
       topic_id: '',
       questions_resolved: 0,
@@ -344,6 +364,20 @@ export default function Sessions({ user }) {
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Plano (Opcional)</label>
+              <select
+                value={formData.plan_id}
+                onChange={(e) => setFormData({ ...formData, plan_id: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Nenhum</option>
+                {plans.map(plan => (
+                  <option key={plan.id} value={plan.id}>{plan.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>

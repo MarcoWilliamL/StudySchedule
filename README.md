@@ -12,7 +12,7 @@ Sistema completo de gerenciamento de estudos com autenticação, cronômetro, pl
 ## 📋 Funcionalidades
 
 - ✅ **Autenticação**: Registro e login de usuários
-- ✅ **Dashboard**: Cronômetro de estudo e cronograma semanal
+- ✅ **Dashboard**: Calendário de estudos
 - ✅ **Matérias**: Gerenciamento com cor e peso (relevância)
 - ✅ **Tópicos**: Organização de conteúdo por matéria
 - ✅ **Planos de Estudo**: Criação de planos personalizados
@@ -20,6 +20,8 @@ Sistema completo de gerenciamento de estudos com autenticação, cronômetro, pl
   - Data, horário e tipo de conteúdo
   - Questões resolvidas, acertos e erros
   - Comentários e observações
+- ✅ **Cronômetro**: Contagem regressiva para estudos
+- ✅ **Revisões**: Em desenvolvimento
 - ✅ **Progresso Visual**: Checkmarks para metas concluídas
 - ✅ **Segurança**: Row Level Security no banco de dados
 
@@ -75,18 +77,19 @@ Acesse: http://localhost:5173
 3. Faça login
 
 ### Menu Lateral
-- **Board**: Dashboard principal com cronômetro e cronograma
+- **Board**: Dashboard principal e cronograma
 - **Plano**: Crie planos de estudo personalizados
 - **Matérias**: Adicione matérias com cor e peso
-- **Sessões de Estudo**: Registre sessões detalhadas
+- **Sessões de Estudo**: Registre sessões detalhadas e cronometre seus estudos
 - **Revisões**: Em desenvolvimento
 
 ### Fluxo de Uso
 1. **Adicione Matérias**: Vá em "Matérias" e crie suas matérias de estudo
 2. **Crie Tópicos**: Organize o conteúdo em tópicos por matéria
-3. **Use o Cronômetro**: No Board, selecione uma matéria e inicie o timer
+3. **Crie Planos de Estudo**: Em "Plano", crie planos personalizados
 4. **Registre Sessões**: Em "Sessões de Estudo", adicione detalhes completos
-5. **Acompanhe Progresso**: Veja checkmarks verdes quando completar 1 hora
+5. **Use o Cronômetro**: Utilize o cronômetro para estudos
+6. **Acompanhe Progresso**: Veja checkmarks verdes quando completar 1 hora
 
 ## 🎨 Estrutura do Projeto
 

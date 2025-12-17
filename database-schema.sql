@@ -61,6 +61,7 @@ CREATE TABLE study_sessions (
 CREATE TABLE study_sessions_detailed (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  plan_id UUID REFERENCES plans(id) ON DELETE SET NULL,
   subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE NOT NULL,
   topic_id UUID REFERENCES topics(id) ON DELETE SET NULL,
   date DATE NOT NULL,

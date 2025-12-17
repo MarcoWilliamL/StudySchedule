@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function StudySchedule({ subjects, userId, weeklyHours }) {
+export default function StudySchedule({ subjects, userId, weeklyHours, planId }) {
   const [schedule, setSchedule] = useState([])
   const [currentWeekStart, setCurrentWeekStart] = useState(getWeekStart(new Date()))
   const [studySessions, setStudySessions] = useState([])
+  const [completedSessions, setCompletedSessions] = useState([])
 
   useEffect(() => {
     generateSchedule()
     fetchStudySessions()
-  }, [subjects, currentWeekStart])
+    if (planId) {
+      fetchCompletedSessions()
+    }
+  }, [subjects, currentWeekStart, planId])
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -31,6 +35,43 @@ export default function StudySchedule({ subjects, userId, weeklyHours }) {
     }
   }
 
+  async function fetchCompletedSessions() {
+    try {
+      const weekStart = currentWeekStart.toISOString().split('T')[0]
+      const weekEnd = new Date(currentWeekStart)
+      weekEnd.setDate(weekEnd.getDate() + 7)
+      const weekEndStr = weekEnd.toISOString().split('T')[0]
+
+      const { data, error } = await supabase
+        .from('study_sessions_detailed')
+        .select('subject_id, start_time, end_time, date')
+        .eq('plan_id', planId)
+        .gte('date', weekStart)
+        .lt('date', weekEndStr)
+      
+      if (error) throw error
+      setCompletedSessions(data || [])
+    } catch (error) {
+      console.error('Error fetching completed sessions:', error)
+    }
+  }
+
+  function getCompletedMinutes(subjectId, date) {
+    const sessions = completedSessions.filter(
+      s => s.subject_id === subjectId && s.date === date
+    )
+    
+    let totalMinutes = 0
+    sessions.forEach(session => {
+      const [startHour, startMin] = session.start_time.split(':').map(Number)
+      const [endHour, endMin] = session.end_time.split(':').map(Number)
+      const minutes = (endHour * 60 + endMin) - (startHour * 60 + startMin)
+      totalMinutes += minutes
+    })
+    
+    return totalMinutes
+  }
+
   function generateSchedule() {
     if (subjects.length === 0) {
       setSchedule([])
@@ -42,52 +83,100 @@ export default function StudySchedule({ subjects, userId, weeklyHours }) {
     // Calculate time allocation based on weight
     const totalWeight = subjects.reduce((sum, s) => sum + s.weight, 0)
     const availableHours = weeklyHours || 28 // Default 4 hours/day * 7 days
+    const totalMinutes = availableHours * 60
     
-    // Calculate hours per subject based on weight
-    const subjectHours = subjects.map(subject => ({
-      ...subject,
-      allocatedHours: (subject.weight / totalWeight) * availableHours
-    }))
+    // Calculate minutes per subject based on weight, rounded to nearest 10
+    const subjectAllocations = subjects.map(subject => {
+      const exactMinutes = (subject.weight / totalWeight) * totalMinutes
+      const roundedMinutes = Math.round(exactMinutes / 10) * 10
+      return {
+        ...subject,
+        totalMinutes: roundedMinutes,
+        remainingMinutes: roundedMinutes
+      }
+    })
+    
+    // Adjust for rounding errors
+    const allocatedTotal = subjectAllocations.reduce((sum, s) => sum + s.totalMinutes, 0)
+    const difference = totalMinutes - allocatedTotal
+    if (difference !== 0 && subjectAllocations.length > 0) {
+      // Add/subtract difference to highest weight subject
+      subjectAllocations[0].totalMinutes += difference
+      subjectAllocations[0].remainingMinutes += difference
+    }
 
-    // Distribute subjects across the week
-    const hoursPerDay = availableHours / 7
+    // Calculate daily hours with weekend distribution
+    const baseHoursPerDay = Math.floor((availableHours / 7) * 10) / 10 // Round to 0.1
+    const totalBaseHours = baseHoursPerDay * 7
+    const excessHours = availableHours - totalBaseHours
+    
+    // Distribute excess to weekends
+    const saturdayExtra = Math.floor((excessHours / 2) * 10) / 10
+    const sundayExtra = Math.ceil((excessHours / 2) * 10) / 10
+    
+    const dailyMinutes = [
+      baseHoursPerDay * 60, // Sunday (0)
+      baseHoursPerDay * 60, // Monday (1)
+      baseHoursPerDay * 60, // Tuesday (2)
+      baseHoursPerDay * 60, // Wednesday (3)
+      baseHoursPerDay * 60, // Thursday (4)
+      baseHoursPerDay * 60, // Friday (5)
+      baseHoursPerDay * 60  // Saturday (6)
+    ]
+    
+    // Add weekend extras
+    dailyMinutes[0] += sundayExtra * 60  // Sunday
+    dailyMinutes[6] += saturdayExtra * 60 // Saturday
     
     // Generate 7 days (current week)
     for (let i = 0; i < 7; i++) {
       const date = new Date(currentWeekStart)
       date.setDate(date.getDate() + i)
+      const dayOfWeek = date.getDay()
       
       const daySchedule = {
         date: date.toISOString().split('T')[0],
         dayOfWeek: date.toLocaleDateString('pt-BR', { weekday: 'long' }),
         isToday: date.toDateString() === new Date().toDateString(),
-        subjects: []
+        subjects: [],
+        totalMinutes: dailyMinutes[dayOfWeek]
       }
 
-      // Distribute subjects for this day based on weight
-      let remainingHours = hoursPerDay
-      let subjectIndex = i % subjects.length
+      // Distribute subjects for this day
+      let remainingMinutes = dailyMinutes[dayOfWeek]
+      const maxSessionMinutes = 120 // Max 2 hours per session
       
-      while (remainingHours > 0 && daySchedule.subjects.length < 6) {
-        const subject = subjectHours[subjectIndex % subjectHours.length]
-        const timeForSubject = Math.min(
-          Math.ceil(subject.allocatedHours / 7), // Distribute evenly across week
-          remainingHours,
-          2 // Max 2 hours per subject per day
+      // Sort subjects by remaining minutes (descending)
+      const sortedSubjects = [...subjectAllocations]
+        .filter(s => s.remainingMinutes > 0)
+        .sort((a, b) => b.remainingMinutes - a.remainingMinutes)
+      
+      for (const subject of sortedSubjects) {
+        if (remainingMinutes <= 0) break
+        if (daySchedule.subjects.length >= 8) break // Max 8 sessions per day
+        
+        // Calculate time for this subject on this day
+        const idealMinutes = Math.min(
+          subject.remainingMinutes,
+          remainingMinutes,
+          maxSessionMinutes
         )
         
-        if (timeForSubject > 0) {
+        // Round to nearest 10 minutes, minimum 10
+        const sessionMinutes = Math.max(10, Math.round(idealMinutes / 10) * 10)
+        
+        if (sessionMinutes >= 10) {
           daySchedule.subjects.push({
             ...subject,
-            timeLimit: `${Math.round(timeForSubject * 60)} min`
+            sessionMinutes: sessionMinutes,
+            timeLimit: `${sessionMinutes} min`
           })
-          remainingHours -= timeForSubject
+          
+          // Update remaining minutes for this subject
+          const subjectIndex = subjectAllocations.findIndex(s => s.id === subject.id)
+          subjectAllocations[subjectIndex].remainingMinutes -= sessionMinutes
+          remainingMinutes -= sessionMinutes
         }
-        
-        subjectIndex++
-        
-        // Prevent infinite loop
-        if (subjectIndex > subjectHours.length * 2) break
       }
 
       newSchedule.push(daySchedule)
@@ -182,6 +271,11 @@ export default function StudySchedule({ subjects, userId, weeklyHours }) {
               <div className="space-y-2">
                 {day.subjects.map((subject, idx) => {
                   const progress = getStudyProgress(subject.id, day.date)
+                  const completedMinutes = planId ? getCompletedMinutes(subject.id, day.date) : 0
+                  const plannedMinutes = subject.sessionMinutes || 60
+                  const remainingMinutes = Math.max(0, plannedMinutes - completedMinutes)
+                  const isCompleted = completedMinutes >= plannedMinutes || progress.completed
+                  
                   return (
                     <div
                       key={idx}
@@ -190,10 +284,10 @@ export default function StudySchedule({ subjects, userId, weeklyHours }) {
                       <div className="flex items-center justify-between mb-1">
                         <div className="font-medium text-gray-800 text-xs">{subject.name}</div>
                         <button
-                          onClick={() => !progress.completed && markAsCompleted(subject.id, day.date)}
-                          disabled={progress.completed}
+                          onClick={() => !isCompleted && markAsCompleted(subject.id, day.date)}
+                          disabled={isCompleted}
                           className={`text-xl transition-colors ${
-                            progress.completed 
+                            isCompleted 
                               ? 'text-green-500 cursor-default' 
                               : 'text-gray-300 hover:text-green-500 cursor-pointer'
                           }`}
@@ -202,11 +296,13 @@ export default function StudySchedule({ subjects, userId, weeklyHours }) {
                         </button>
                       </div>
                       <div className={`text-xs mt-1 ${
-                        progress.completed ? 'text-green-600 font-semibold' : 'text-gray-500'
+                        isCompleted ? 'text-green-600 font-semibold' : 'text-gray-500'
                       }`}>
-                        {progress.completed 
+                        {isCompleted 
                           ? 'Concluído!' 
-                          : `Faltam ${progress.remainingMinutes} min`
+                          : planId && completedMinutes > 0
+                            ? `${completedMinutes}/${plannedMinutes} min (faltam ${remainingMinutes} min)`
+                            : `${plannedMinutes} min`
                         }
                       </div>
                     </div>
