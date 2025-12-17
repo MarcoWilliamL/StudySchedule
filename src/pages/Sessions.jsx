@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 export default function Sessions({ user }) {
@@ -7,6 +7,9 @@ export default function Sessions({ user }) {
   const [topics, setTopics] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingSession, setEditingSession] = useState(null)
+  const [isRunning, setIsRunning] = useState(false)
+  const [sessionStartTime, setSessionStartTime] = useState(null)
+  const intervalRef = useRef(null)
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     start_time: '',
@@ -27,6 +30,96 @@ export default function Sessions({ user }) {
     fetchSubjects()
     fetchTopics()
   }, [])
+
+  useEffect(() => {
+    if (isRunning && sessionStartTime) {
+      intervalRef.current = setInterval(() => {
+        updateElapsedTime()
+      }, 1000)
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+    }
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+    }
+  }, [isRunning, sessionStartTime])
+
+  function updateElapsedTime() {
+    if (!sessionStartTime) return
+    
+    const now = new Date()
+    const start = new Date(sessionStartTime)
+    const elapsed = Math.floor((now - start) / 1000)
+    
+    const hours = Math.floor(elapsed / 3600)
+    const minutes = Math.floor((elapsed % 3600) / 60)
+    const seconds = elapsed % 60
+    
+    const endTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+    
+    setFormData(prev => ({
+      ...prev,
+      end_time: endTime
+    }))
+  }
+
+  function startSession() {
+    if (!formData.subject_id) {
+      alert('Selecione uma matéria primeiro')
+      return
+    }
+    
+    const now = new Date()
+    const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+    
+    setSessionStartTime(now)
+    setIsRunning(true)
+    setShowForm(true)
+    setFormData(prev => ({
+      ...prev,
+      date: now.toISOString().split('T')[0],
+      start_time: startTime,
+      end_time: startTime
+    }))
+  }
+
+  function pauseSession() {
+    setIsRunning(false)
+  }
+
+  function resumeSession() {
+    if (sessionStartTime) {
+      setIsRunning(true)
+    }
+  }
+
+  function stopSession() {
+    setIsRunning(false)
+    updateElapsedTime()
+  }
+
+  function getElapsedTime() {
+    if (!formData.start_time || !formData.end_time) return '00:00:00'
+    
+    const [startHour, startMin] = formData.start_time.split(':').map(Number)
+    const [endHour, endMin] = formData.end_time.split(':').map(Number)
+    
+    const startSeconds = startHour * 3600 + startMin * 60
+    const endSeconds = endHour * 3600 + endMin * 60
+    const elapsed = endSeconds - startSeconds
+    
+    if (elapsed < 0) return '00:00:00'
+    
+    const hours = Math.floor(elapsed / 3600)
+    const minutes = Math.floor((elapsed % 3600) / 60)
+    const seconds = elapsed % 60
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
 
   async function fetchSessions() {
     try {
@@ -152,6 +245,11 @@ export default function Sessions({ user }) {
     })
     setEditingSession(null)
     setShowForm(false)
+    setIsRunning(false)
+    setSessionStartTime(null)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+    }
   }
 
   const filteredTopics = topics.filter(t => t.subject_id === formData.subject_id)
@@ -166,6 +264,111 @@ export default function Sessions({ user }) {
         >
           {showForm ? 'Cancelar' : '+ Nova Sessão'}
         </button>
+      </div>
+
+      {/* Chronometer Section */}
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Cronômetro de Sessão</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Matéria</label>
+            <select
+              value={formData.subject_id}
+              onChange={(e) => setFormData({ ...formData, subject_id: e.target.value, topic_id: '' })}
+              disabled={isRunning}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+            >
+              <option value="">Selecione</option>
+              {subjects.map(subject => (
+                <option key={subject.id} value={subject.id}>{subject.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tópico (Opcional)</label>
+            <select
+              value={formData.topic_id}
+              onChange={(e) => setFormData({ ...formData, topic_id: e.target.value })}
+              disabled={isRunning}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+            >
+              <option value="">Nenhum</option>
+              {topics.filter(t => t.subject_id === formData.subject_id).map(topic => (
+                <option key={topic.id} value={topic.id}>{topic.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Conteúdo</label>
+            <select
+              value={formData.content_type}
+              onChange={(e) => setFormData({ ...formData, content_type: e.target.value })}
+              disabled={isRunning}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+            >
+              {contentTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="text-center mb-6">
+          <div className="text-6xl font-mono font-bold text-indigo-600 mb-2">
+            {getElapsedTime()}
+          </div>
+          {formData.start_time && (
+            <div className="text-sm text-gray-600">
+              Início: {formData.start_time} {formData.end_time && `• Fim: ${formData.end_time}`}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          {!isRunning && !sessionStartTime && (
+            <button
+              onClick={startSession}
+              className="flex-1 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
+            >
+              ▶️ Iniciar Sessão
+            </button>
+          )}
+          {isRunning && (
+            <button
+              onClick={pauseSession}
+              className="flex-1 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-semibold"
+            >
+              ⏸️ Pausar
+            </button>
+          )}
+          {!isRunning && sessionStartTime && (
+            <>
+              <button
+                onClick={resumeSession}
+                className="flex-1 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold"
+              >
+                ▶️ Retomar
+              </button>
+              <button
+                onClick={stopSession}
+                className="flex-1 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold"
+              >
+                ⏹️ Finalizar
+              </button>
+            </>
+          )}
+          {sessionStartTime && (
+            <button
+              onClick={resetForm}
+              className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+            >
+              🔄 Resetar
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && (

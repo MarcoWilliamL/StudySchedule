@@ -1,23 +1,47 @@
 import { useState, useEffect } from 'react'
 import StudySchedule from '../components/StudySchedule'
-import StudyTimer from '../components/StudyTimer'
 import { supabase } from '../lib/supabase'
 
 export default function Board({ user }) {
   const [subjects, setSubjects] = useState([])
+  const [plans, setPlans] = useState([])
+  const [selectedPlan, setSelectedPlan] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    fetchSubjects()
+    fetchPlans()
   }, [])
 
-  async function fetchSubjects() {
+  useEffect(() => {
+    if (selectedPlan) {
+      fetchSubjectsByPlan()
+    } else {
+      fetchAllSubjects()
+    }
+  }, [selectedPlan])
+
+  async function fetchPlans() {
+    try {
+      const { data, error } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+      
+      if (error) throw error
+      setPlans(data || [])
+    } catch (error) {
+      console.error('Error fetching plans:', error)
+    }
+  }
+
+  async function fetchAllSubjects() {
     try {
       const { data, error } = await supabase
         .from('subjects')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
+        .order('weight', { ascending: false })
       
       if (error) throw error
       setSubjects(data || [])
@@ -26,8 +50,30 @@ export default function Board({ user }) {
     }
   }
 
+  async function fetchSubjectsByPlan() {
+    try {
+      const { data, error } = await supabase
+        .from('plan_subjects')
+        .select('subjects(*)')
+        .eq('plan_id', selectedPlan)
+      
+      if (error) throw error
+      
+      const planSubjects = data.map(ps => ps.subjects).filter(Boolean)
+      planSubjects.sort((a, b) => b.weight - a.weight)
+      
+      setSubjects(planSubjects)
+    } catch (error) {
+      console.error('Error fetching plan subjects:', error)
+    }
+  }
+
   function handleUpdate() {
-    fetchSubjects()
+    if (selectedPlan) {
+      fetchSubjectsByPlan()
+    } else {
+      fetchAllSubjects()
+    }
     setRefreshKey(prev => prev + 1)
   }
 
@@ -35,11 +81,28 @@ export default function Board({ user }) {
     <div className="p-8">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Dashboard</h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <StudyTimer subjects={subjects} userId={user.id} />
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Selecione um Plano de Estudo
+        </label>
+        <select
+          value={selectedPlan}
+          onChange={(e) => setSelectedPlan(e.target.value)}
+          className="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Todas as Matérias</option>
+          {plans.map(plan => (
+            <option key={plan.id} value={plan.id}>{plan.name}</option>
+          ))}
+        </select>
+        {selectedPlan && (
+          <p className="text-sm text-gray-600 mt-2">
+            Mostrando matérias do plano selecionado, organizadas por prioridade (peso)
+          </p>
+        )}
       </div>
       
-      <StudySchedule key={refreshKey} subjects={subjects} />
+      <StudySchedule key={refreshKey} subjects={subjects} userId={user.id} />
     </div>
   )
 }
