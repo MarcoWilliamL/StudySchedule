@@ -78,21 +78,22 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
       return
     }
 
-    const newSchedule = []
+    // Standard study periods (Pomodoro-based)
+    const STUDY_PERIODS = [60, 50, 30, 25]
     
     // Calculate time allocation based on weight
     const totalWeight = subjects.reduce((sum, s) => sum + s.weight, 0)
-    const availableHours = weeklyHours || 28 // Default 4 hours/day * 7 days
+    const availableHours = weeklyHours || 28
     const totalMinutes = availableHours * 60
     
-    // Calculate minutes per subject based on weight, rounded to nearest 10
+    // Calculate minutes per subject based on weight
     const subjectAllocations = subjects.map(subject => {
       const exactMinutes = (subject.weight / totalWeight) * totalMinutes
-      const roundedMinutes = Math.round(exactMinutes / 10) * 10
       return {
         ...subject,
-        totalMinutes: roundedMinutes,
-        remainingMinutes: roundedMinutes
+        totalMinutes: Math.round(exactMinutes),
+        remainingMinutes: Math.round(exactMinutes),
+        dailyAllocations: {} // Track allocation per day
       }
     })
     
@@ -100,51 +101,29 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
     const allocatedTotal = subjectAllocations.reduce((sum, s) => sum + s.totalMinutes, 0)
     const difference = totalMinutes - allocatedTotal
     if (difference !== 0 && subjectAllocations.length > 0) {
-      // Add/subtract difference to highest weight subject
       subjectAllocations[0].totalMinutes += difference
       subjectAllocations[0].remainingMinutes += difference
     }
 
-    // Calculate daily hours with weekend distribution
-    const baseHoursPerDay = Math.floor((availableHours / 7) * 10) / 10 // Round to 0.1
-    const totalBaseHours = baseHoursPerDay * 7
-    const excessHours = availableHours - totalBaseHours
+    // Calculate daily target minutes with weekend distribution
+    const baseMinutesPerDay = Math.floor(totalMinutes / 7)
+    const excessMinutes = totalMinutes - (baseMinutesPerDay * 7)
     
-    // Distribute excess to weekends
-    const saturdayExtra = Math.floor((excessHours / 2) * 10) / 10
-    const sundayExtra = Math.ceil((excessHours / 2) * 10) / 10
-    
-    const dailyMinutes = [
-      baseHoursPerDay * 60, // Sunday (0)
-      baseHoursPerDay * 60, // Monday (1)
-      baseHoursPerDay * 60, // Tuesday (2)
-      baseHoursPerDay * 60, // Wednesday (3)
-      baseHoursPerDay * 60, // Thursday (4)
-      baseHoursPerDay * 60, // Friday (5)
-      baseHoursPerDay * 60  // Saturday (6)
+    const dailyTargets = [
+      baseMinutesPerDay + Math.ceil(excessMinutes / 2),  // Sunday (0)
+      baseMinutesPerDay,                                  // Monday (1)
+      baseMinutesPerDay,                                  // Tuesday (2)
+      baseMinutesPerDay,                                  // Wednesday (3)
+      baseMinutesPerDay,                                  // Thursday (4)
+      baseMinutesPerDay,                                  // Friday (5)
+      baseMinutesPerDay + Math.floor(excessMinutes / 2)  // Saturday (6)
     ]
     
-    // Add weekend extras
-    dailyMinutes[0] += sundayExtra * 60  // Sunday
-    dailyMinutes[6] += saturdayExtra * 60 // Saturday
+    // First pass: Distribute time across days
+    const dayAllocations = Array(7).fill(null).map(() => [])
     
-    // Generate 7 days (current week)
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(currentWeekStart)
-      date.setDate(date.getDate() + i)
-      const dayOfWeek = date.getDay()
-      
-      const daySchedule = {
-        date: date.toISOString().split('T')[0],
-        dayOfWeek: date.toLocaleDateString('pt-BR', { weekday: 'long' }),
-        isToday: date.toDateString() === new Date().toDateString(),
-        subjects: [],
-        totalMinutes: dailyMinutes[dayOfWeek]
-      }
-
-      // Distribute subjects for this day
-      let remainingMinutes = dailyMinutes[dayOfWeek]
-      const maxSessionMinutes = 120 // Max 2 hours per session
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      let dailyRemaining = dailyTargets[dayIndex]
       
       // Sort subjects by remaining minutes (descending)
       const sortedSubjects = [...subjectAllocations]
@@ -152,37 +131,124 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
         .sort((a, b) => b.remainingMinutes - a.remainingMinutes)
       
       for (const subject of sortedSubjects) {
-        if (remainingMinutes <= 0) break
-        if (daySchedule.subjects.length >= 8) break // Max 8 sessions per day
+        if (dailyRemaining < 25) break // Minimum session is 25 min
         
-        // Calculate time for this subject on this day
+        // Calculate ideal time for this subject today
         const idealMinutes = Math.min(
           subject.remainingMinutes,
-          remainingMinutes,
-          maxSessionMinutes
+          dailyRemaining,
+          120 // Max 2 hours per occurrence
         )
         
-        // Round to nearest 10 minutes, minimum 10
-        const sessionMinutes = Math.max(10, Math.round(idealMinutes / 10) * 10)
+        if (idealMinutes >= 25) {
+          dayAllocations[dayIndex].push({
+            subjectId: subject.id,
+            minutes: idealMinutes
+          })
+          
+          const subjectIndex = subjectAllocations.findIndex(s => s.id === subject.id)
+          subjectAllocations[subjectIndex].remainingMinutes -= idealMinutes
+          dailyRemaining -= idealMinutes
+        }
+      }
+    }
+    
+    // Second pass: Fit to standard periods and redistribute excess
+    const finalSchedule = []
+    const excessBySubject = {}
+    
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      const date = new Date(currentWeekStart)
+      date.setDate(date.getDate() + dayIndex)
+      
+      const daySchedule = {
+        date: date.toISOString().split('T')[0],
+        dayOfWeek: date.toLocaleDateString('pt-BR', { weekday: 'long' }),
+        isToday: date.toDateString() === new Date().toDateString(),
+        subjects: []
+      }
+      
+      for (const allocation of dayAllocations[dayIndex]) {
+        const subject = subjects.find(s => s.id === allocation.subjectId)
+        let remainingMinutes = allocation.minutes
         
-        if (sessionMinutes >= 10) {
+        // Split into standard periods
+        while (remainingMinutes >= 25) {
+          let sessionMinutes = 0
+          
+          // Find best fitting period
+          for (const period of STUDY_PERIODS) {
+            if (remainingMinutes >= period) {
+              sessionMinutes = period
+              break
+            }
+          }
+          
+          // If no perfect fit, use closest smaller period
+          if (sessionMinutes === 0) {
+            if (remainingMinutes >= 25) {
+              sessionMinutes = 25
+            } else {
+              // Save excess for redistribution
+              if (!excessBySubject[allocation.subjectId]) {
+                excessBySubject[allocation.subjectId] = 0
+              }
+              excessBySubject[allocation.subjectId] += remainingMinutes
+              break
+            }
+          }
+          
           daySchedule.subjects.push({
             ...subject,
             sessionMinutes: sessionMinutes,
-            timeLimit: `${sessionMinutes} min`
+            timeLimit: `${sessionMinutes} min`,
+            sessionId: `${subject.id}-${dayIndex}-${daySchedule.subjects.length}` // Unique ID for each session
           })
           
-          // Update remaining minutes for this subject
-          const subjectIndex = subjectAllocations.findIndex(s => s.id === subject.id)
-          subjectAllocations[subjectIndex].remainingMinutes -= sessionMinutes
           remainingMinutes -= sessionMinutes
         }
+        
+        // Handle small excess (< 25 min)
+        if (remainingMinutes > 0 && remainingMinutes < 25) {
+          if (!excessBySubject[allocation.subjectId]) {
+            excessBySubject[allocation.subjectId] = 0
+          }
+          excessBySubject[allocation.subjectId] += remainingMinutes
+        }
       }
-
-      newSchedule.push(daySchedule)
+      
+      finalSchedule.push(daySchedule)
     }
-
-    setSchedule(newSchedule)
+    
+    // Third pass: Redistribute excess minutes
+    for (const [subjectId, excessMinutes] of Object.entries(excessBySubject)) {
+      if (excessMinutes >= 25) {
+        const subject = subjects.find(s => s.id === subjectId)
+        
+        // Find day with least sessions to add excess
+        const dayWithLeastSessions = finalSchedule
+          .map((day, index) => ({ day, index, count: day.subjects.length }))
+          .sort((a, b) => a.count - b.count)[0]
+        
+        // Determine best period for excess
+        let sessionMinutes = 25
+        for (const period of STUDY_PERIODS) {
+          if (excessMinutes >= period) {
+            sessionMinutes = period
+            break
+          }
+        }
+        
+        dayWithLeastSessions.day.subjects.push({
+          ...subject,
+          sessionMinutes: sessionMinutes,
+          timeLimit: `${sessionMinutes} min`,
+          sessionId: `${subject.id}-${dayWithLeastSessions.index}-${dayWithLeastSessions.day.subjects.length}` // Unique ID
+        })
+      }
+    }
+    
+    setSchedule(finalSchedule)
   }
 
   function changeWeek(offset) {
@@ -208,19 +274,47 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
     }
   }
 
-  async function markAsCompleted(subjectId, date) {
+  async function markAsCompleted(sessionId, subjectId, date, sessionMinutes) {
     try {
-      // Add a session of exactly 1 hour for this subject and date
-      const { error } = await supabase
-        .from('study_sessions')
-        .insert([{
-          subject_id: subjectId,
-          duration_seconds: 3600,
-          date: new Date(date + 'T12:00:00').toISOString()
-        }])
-      
-      if (error) throw error
-      await fetchStudySessions()
+      if (planId) {
+        // Create session in study_sessions_detailed for plan tracking
+        const now = new Date()
+        const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+        const endDate = new Date(now.getTime() + sessionMinutes * 60000)
+        const endTime = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`
+        
+        const { error } = await supabase
+          .from('study_sessions_detailed')
+          .insert([{
+            user_id: userId,
+            plan_id: planId,
+            subject_id: subjectId,
+            date: date,
+            start_time: startTime,
+            end_time: endTime,
+            content_type: 'Estudo',
+            questions_resolved: 0,
+            correct_answers: 0,
+            wrong_answers: 0,
+            comments: 'Sessão marcada como concluída'
+          }])
+        
+        if (error) throw error
+        await fetchCompletedSessions()
+      } else {
+        // Fallback to old table
+        const durationSeconds = sessionMinutes * 60
+        const { error } = await supabase
+          .from('study_sessions')
+          .insert([{
+            subject_id: subjectId,
+            duration_seconds: durationSeconds,
+            date: new Date(date + 'T12:00:00').toISOString()
+          }])
+        
+        if (error) throw error
+        await fetchStudySessions()
+      }
     } catch (error) {
       console.error('Error marking as completed:', error)
       alert('Erro ao marcar como concluído')
@@ -270,21 +364,29 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
               </div>
               <div className="space-y-2">
                 {day.subjects.map((subject, idx) => {
-                  const progress = getStudyProgress(subject.id, day.date)
+                  const sessionMinutes = subject.sessionMinutes || 60
                   const completedMinutes = planId ? getCompletedMinutes(subject.id, day.date) : 0
-                  const plannedMinutes = subject.sessionMinutes || 60
-                  const remainingMinutes = Math.max(0, plannedMinutes - completedMinutes)
-                  const isCompleted = completedMinutes >= plannedMinutes || progress.completed
+                  
+                  // Calculate cumulative minutes for sessions of this subject up to this point
+                  let cumulativeMinutes = 0
+                  for (let i = 0; i <= idx; i++) {
+                    if (day.subjects[i].id === subject.id) {
+                      cumulativeMinutes += (day.subjects[i].sessionMinutes || 60)
+                    }
+                  }
+                  
+                  // This session is completed if total completed >= cumulative up to this session
+                  const isCompleted = completedMinutes >= cumulativeMinutes
                   
                   return (
                     <div
-                      key={idx}
+                      key={subject.sessionId || idx}
                       className="text-sm bg-white border border-gray-200 p-2 rounded"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <div className="font-medium text-gray-800 text-xs">{subject.name}</div>
                         <button
-                          onClick={() => !isCompleted && markAsCompleted(subject.id, day.date)}
+                          onClick={() => !isCompleted && markAsCompleted(subject.sessionId, subject.id, day.date, sessionMinutes)}
                           disabled={isCompleted}
                           className={`text-xl transition-colors ${
                             isCompleted 
@@ -300,9 +402,7 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
                       }`}>
                         {isCompleted 
                           ? 'Concluído!' 
-                          : planId && completedMinutes > 0
-                            ? `${completedMinutes}/${plannedMinutes} min (faltam ${remainingMinutes} min)`
-                            : `${plannedMinutes} min`
+                          : `${sessionMinutes} min`
                         }
                       </div>
                     </div>

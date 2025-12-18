@@ -17,7 +17,7 @@ export default function Board({ user }) {
     if (selectedPlan) {
       fetchSubjectsByPlan()
     } else {
-      fetchAllSubjects()
+      setSubjects([])
       setSelectedPlanData(null)
     }
   }, [selectedPlan])
@@ -37,20 +37,7 @@ export default function Board({ user }) {
     }
   }
 
-  async function fetchAllSubjects() {
-    try {
-      const { data, error } = await supabase
-        .from('subjects')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('weight', { ascending: false })
-      
-      if (error) throw error
-      setSubjects(data || [])
-    } catch (error) {
-      console.error('Error fetching subjects:', error)
-    }
-  }
+
 
   async function fetchSubjectsByPlan() {
     try {
@@ -94,7 +81,7 @@ export default function Board({ user }) {
           onChange={(e) => setSelectedPlan(e.target.value)}
           className="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
         >
-          <option value="">Todas as Matérias</option>
+          <option value="">-- Selecione um plano --</option>
           {plans.map(plan => (
             <option key={plan.id} value={plan.id}>{plan.name}</option>
           ))}
@@ -111,13 +98,28 @@ export default function Board({ user }) {
         )}
       </div>
       
-      <StudySchedule 
-        key={refreshKey} 
-        subjects={subjects} 
-        userId={user.id}
-        weeklyHours={selectedPlanData?.weekly_hours || null}
-        planId={selectedPlan || null}
-      />
+      {selectedPlan ? (
+        <StudySchedule 
+          key={refreshKey} 
+          subjects={subjects} 
+          userId={user.id}
+          weeklyHours={selectedPlanData?.weekly_hours || null}
+          planId={selectedPlan || null}
+        />
+      ) : (
+        <div className="bg-white rounded-lg shadow-lg p-12 text-center">
+          <div className="text-6xl mb-4">📋</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            Selecione um Plano de Estudo
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Escolha um plano acima para visualizar seu cronograma semanal de estudos
+          </p>
+          <p className="text-sm text-gray-500">
+            Não tem um plano ainda? Crie um na página "Plano"
+          </p>
+        </div>
+      )}
     </div>
   )
 }
