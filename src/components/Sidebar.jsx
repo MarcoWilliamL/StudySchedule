@@ -5,6 +5,7 @@ export default function Sidebar({ currentPage, onPageChange, user }) {
     { id: 'board', label: 'Board', icon: '📊' },
     { id: 'plan', label: 'Plano', icon: '📋' },
     { id: 'subjects', label: 'Matérias', icon: '📚' },
+    { id: 'topics', label: 'Tópicos', icon: '📝' },
     { id: 'sessions', label: 'Sessões de Estudo', icon: '⏱️' },
     { id: 'reviews', label: 'Revisões', icon: '🔄' },
   ]
@@ -17,7 +18,7 @@ export default function Sidebar({ currentPage, onPageChange, user }) {
   return (
     <div className="w-64 bg-indigo-900 text-white min-h-screen flex flex-col">
       <div className="p-6">
-        <h1 className="text-2xl font-bold">📚 Estudos</h1>
+        <h1 className="text-2xl font-bold">📚 Studium</h1>
         <p className="text-sm text-indigo-300 mt-1">{user?.email}</p>
       </div>
       

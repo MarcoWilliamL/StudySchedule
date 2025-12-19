@@ -10,6 +10,7 @@ export default function Sessions({ user }) {
   const [editingSession, setEditingSession] = useState(null)
   const [showChronometerModal, setShowChronometerModal] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState(null)
+  const [currentSessionData, setCurrentSessionData] = useState(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [targetSeconds, setTargetSeconds] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
@@ -90,6 +91,7 @@ export default function Sessions({ user }) {
     setElapsedSeconds(0)
     setTargetSeconds(0)
     setCurrentSessionId(null)
+    setCurrentSessionData(null)
     setHasAlerted(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
@@ -181,6 +183,12 @@ export default function Sessions({ user }) {
         
         if (error) throw error
         
+        // Store session data before resetting form
+        setCurrentSessionData({
+          topic_id: formData.topic_id,
+          subject_id: formData.subject_id
+        })
+        
         // Calculate session duration and show chronometer modal
         const duration = getSessionDuration(formData.start_time, formData.end_time)
         setTargetSeconds(duration)
@@ -191,11 +199,63 @@ export default function Sessions({ user }) {
         setIsRunning(true)
       }
 
-      resetForm()
+      if (editingSession) {
+        resetForm()
+      } else {
+        // Don't reset form yet if showing chronometer
+        setShowForm(false)
+      }
       fetchSessions()
     } catch (error) {
       console.error('Error saving session:', error)
       alert('Erro ao salvar sessão')
+    }
+  }
+
+  async function markTopicAsCompleted(topicId, subjectId) {
+    if (!topicId) {
+      alert('Nenhum tópico selecionado nesta sessão')
+      return
+    }
+
+    if (!confirm('Marcar este tópico como concluído e criar primeira revisão?')) return
+
+    try {
+      // Mark topic as completed
+      const { error: topicError } = await supabase
+        .from('topics')
+        .update({ 
+          completed: true,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', topicId)
+
+      if (topicError) throw topicError
+
+      // Create first review (next review in 1 day)
+      const today = new Date()
+      const nextReview = new Date(today)
+      nextReview.setDate(nextReview.getDate() + 1)
+
+      const { error: reviewError } = await supabase
+        .from('reviews')
+        .insert([{
+          user_id: user.id,
+          topic_id: topicId,
+          subject_id: subjectId,
+          review_date: today.toISOString().split('T')[0],
+          next_review_date: nextReview.toISOString().split('T')[0],
+          days_interval: 1,
+          completed: false
+        }])
+
+      if (reviewError) throw reviewError
+
+      alert('✓ Tópico marcado como concluído! Primeira revisão agendada para amanhã.')
+      fetchTopics()
+    } catch (error) {
+      console.error('Error marking topic as completed:', error)
+      alert('Erro ao marcar tópico como concluído')
     }
   }
 
@@ -304,12 +364,28 @@ export default function Sessions({ user }) {
                 {isRunning ? '⏸️ Pausar' : '▶️ Continuar'}
               </button>
               <button
-                onClick={closeChronometer}
+                onClick={() => {
+                  closeChronometer()
+                  resetForm()
+                }}
                 className="flex-1 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
               >
                 ✓ Fechar
               </button>
             </div>
+
+            {currentSessionData?.topic_id && (
+              <button
+                onClick={() => {
+                  markTopicAsCompleted(currentSessionData.topic_id, currentSessionData.subject_id)
+                  closeChronometer()
+                  resetForm()
+                }}
+                className="w-full mt-3 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"
+              >
+                📚 Marcar Tópico como Concluído
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -473,76 +549,76 @@ export default function Sessions({ user }) {
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {sessions.map((session) => (
-          <div key={session.id} className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-3">
+          <div key={session.id} className="bg-white rounded-lg shadow p-4">
+            <div className="flex justify-between items-start mb-3">
+              <div className="flex items-center gap-2">
                 <div
-                  className="w-4 h-4 rounded-full"
+                  className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: session.subjects?.color }}
                 />
                 <div>
-                  <h3 className="font-bold text-lg text-gray-800">{session.subjects?.name}</h3>
+                  <h3 className="font-bold text-base text-gray-800">{session.subjects?.name}</h3>
                   {session.topics && (
-                    <p className="text-sm text-gray-600">{session.topics.title}</p>
+                    <p className="text-xs text-gray-600">{session.topics.title}</p>
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-1">
                 <button
                   onClick={() => editSession(session)}
-                  className="text-blue-600 hover:text-blue-800"
+                  className="text-blue-600 hover:text-blue-800 text-sm"
                 >
                   ✏️
                 </button>
                 <button
                   onClick={() => deleteSession(session.id)}
-                  className="text-red-600 hover:text-red-800"
+                  className="text-red-600 hover:text-red-800 text-sm"
                 >
                   🗑️
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-2 gap-2 mb-3">
               <div>
-                <p className="text-sm text-gray-500">Data</p>
-                <p className="font-medium">{new Date(session.date).toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs text-gray-500">Data</p>
+                <p className="text-sm font-medium">{new Date(session.date + 'T00:00:00').toLocaleDateString('pt-BR')}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Horário</p>
-                <p className="font-medium">{session.start_time} - {session.end_time}</p>
+                <p className="text-xs text-gray-500">Horário</p>
+                <p className="text-sm font-medium">{session.start_time} - {session.end_time}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Tipo</p>
-                <p className="font-medium">{session.content_type}</p>
+                <p className="text-xs text-gray-500">Tipo</p>
+                <p className="text-sm font-medium">{session.content_type}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Questões</p>
-                <p className="font-medium">{session.questions_resolved}</p>
+                <p className="text-xs text-gray-500">Questões</p>
+                <p className="text-sm font-medium">{session.questions_resolved}</p>
               </div>
             </div>
 
             {session.questions_resolved > 0 && (
-              <div className="flex gap-4 mb-4">
-                <div className="flex items-center gap-2">
+              <div className="flex gap-3 mb-2 text-xs">
+                <div className="flex items-center gap-1">
                   <span className="text-green-600">✓</span>
-                  <span className="text-sm">{session.correct_answers} acertos</span>
+                  <span>{session.correct_answers}</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <span className="text-red-600">✗</span>
-                  <span className="text-sm">{session.wrong_answers} erros</span>
+                  <span>{session.wrong_answers}</span>
                 </div>
-                <div className="text-sm text-gray-600">
-                  ({((session.correct_answers / session.questions_resolved) * 100).toFixed(1)}% de aproveitamento)
+                <div className="text-gray-600">
+                  ({((session.correct_answers / session.questions_resolved) * 100).toFixed(0)}%)
                 </div>
               </div>
             )}
 
             {session.comments && (
-              <div className="border-t pt-4">
-                <p className="text-sm text-gray-700">{session.comments}</p>
+              <div className="border-t pt-2 mt-2">
+                <p className="text-xs text-gray-700">{session.comments}</p>
               </div>
             )}
           </div>

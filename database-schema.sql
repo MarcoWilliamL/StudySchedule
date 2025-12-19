@@ -15,7 +15,7 @@ CREATE TABLE subjects (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
   color TEXT DEFAULT '#6366f1',
-  weight INTEGER DEFAULT 5 CHECK (weight >= 1 AND weight <= 10),
+  weight INTEGER DEFAULT 3 CHECK (weight >= 1 AND weight <= 5),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -25,7 +25,25 @@ CREATE TABLE topics (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE NOT NULL,
   title TEXT NOT NULL,
-  weight INTEGER DEFAULT 5 CHECK (weight >= 1 AND weight <= 10),
+  weight INTEGER DEFAULT 3 CHECK (weight >= 1 AND weight <= 5),
+  completed BOOLEAN DEFAULT FALSE,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Reviews table
+CREATE TABLE reviews (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  topic_id UUID REFERENCES topics(id) ON DELETE CASCADE NOT NULL,
+  subject_id UUID REFERENCES subjects(id) ON DELETE CASCADE NOT NULL,
+  review_date DATE NOT NULL,
+  next_review_date DATE,
+  review_type TEXT,
+  days_interval INTEGER,
+  completed BOOLEAN DEFAULT FALSE,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -82,6 +100,7 @@ ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_subjects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions_detailed ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for subjects
 CREATE POLICY "Users can view their own subjects" ON subjects
@@ -172,12 +191,30 @@ CREATE POLICY "Users can update their own detailed sessions" ON study_sessions_d
 CREATE POLICY "Users can delete their own detailed sessions" ON study_sessions_detailed
   FOR DELETE USING (auth.uid() = user_id);
 
+-- RLS Policies for reviews
+CREATE POLICY "Users can view their own reviews" ON reviews
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own reviews" ON reviews
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own reviews" ON reviews
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own reviews" ON reviews
+  FOR DELETE USING (auth.uid() = user_id);
+
 -- Create indexes for better performance
 CREATE INDEX idx_subjects_user_id ON subjects(user_id);
 CREATE INDEX idx_topics_user_id ON topics(user_id);
 CREATE INDEX idx_topics_subject_id ON topics(subject_id);
+CREATE INDEX idx_topics_completed ON topics(completed);
 CREATE INDEX idx_plans_user_id ON plans(user_id);
 CREATE INDEX idx_plan_subjects_plan_id ON plan_subjects(plan_id);
 CREATE INDEX idx_study_sessions_subject_id ON study_sessions(subject_id);
 CREATE INDEX idx_study_sessions_detailed_user_id ON study_sessions_detailed(user_id);
 CREATE INDEX idx_study_sessions_detailed_date ON study_sessions_detailed(date);
+CREATE INDEX idx_reviews_user_id ON reviews(user_id);
+CREATE INDEX idx_reviews_topic_id ON reviews(topic_id);
+CREATE INDEX idx_reviews_review_date ON reviews(review_date);
+CREATE INDEX idx_reviews_next_review_date ON reviews(next_review_date);

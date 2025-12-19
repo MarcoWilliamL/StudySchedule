@@ -8,12 +8,73 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
   const [completedSessions, setCompletedSessions] = useState([])
 
   useEffect(() => {
-    generateSchedule()
-    fetchStudySessions()
     if (planId) {
+      loadOrGenerateSchedule()
       fetchCompletedSessions()
+    } else {
+      generateSchedule()
+      fetchStudySessions()
     }
   }, [subjects, currentWeekStart, planId])
+
+  async function loadOrGenerateSchedule() {
+    try {
+      // First check if we have subjects
+      if (!subjects || subjects.length === 0) {
+        console.log('No subjects available')
+        setSchedule([])
+        return
+      }
+
+      const weekStart = currentWeekStart.toISOString().split('T')[0]
+      
+      // Try to load existing schedule for this week
+      const { data, error } = await supabase
+        .from('weekly_schedules')
+        .select('schedule_data')
+        .eq('plan_id', planId)
+        .eq('week_start_date', weekStart)
+        .maybeSingle()
+      
+      if (data && data.schedule_data) {
+        // Load existing schedule
+        console.log('Loading existing schedule from database')
+        setSchedule(data.schedule_data)
+      } else {
+        // Generate new schedule and save it
+        console.log('Generating new schedule')
+        const newSchedule = generateScheduleData()
+        
+        if (newSchedule && newSchedule.length > 0) {
+          setSchedule(newSchedule)
+          
+          // Try to save to database (don't fail if table doesn't exist)
+          try {
+            await supabase
+              .from('weekly_schedules')
+              .upsert({
+                user_id: userId,
+                plan_id: planId,
+                week_start_date: weekStart,
+                schedule_data: newSchedule
+              })
+            console.log('Schedule saved to database')
+          } catch (saveError) {
+            console.warn('Could not save schedule to database (table may not exist yet):', saveError)
+            // Continue anyway - schedule is still displayed
+          }
+        } else {
+          console.log('Generated schedule is empty')
+          setSchedule([])
+        }
+      }
+    } catch (error) {
+      console.error('Error loading schedule:', error)
+      // Fallback to generating without saving
+      const newSchedule = generateScheduleData()
+      setSchedule(newSchedule || [])
+    }
+  }
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -72,10 +133,9 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
     return totalMinutes
   }
 
-  function generateSchedule() {
+  function generateScheduleData() {
     if (subjects.length === 0) {
-      setSchedule([])
-      return
+      return []
     }
 
     // Standard study periods (Pomodoro-based)
@@ -248,7 +308,12 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
       }
     }
     
-    setSchedule(finalSchedule)
+    return finalSchedule
+  }
+
+  function generateSchedule() {
+    const newSchedule = generateScheduleData()
+    setSchedule(newSchedule)
   }
 
   function changeWeek(offset) {
@@ -321,6 +386,30 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
     }
   }
 
+  async function regenerateSchedule() {
+    if (!confirm('Regenerar o cronograma desta semana? Isso irá substituir o cronograma atual.')) return
+    
+    try {
+      const weekStart = currentWeekStart.toISOString().split('T')[0]
+      
+      // Delete existing schedule
+      await supabase
+        .from('weekly_schedules')
+        .delete()
+        .eq('plan_id', planId)
+        .eq('week_start_date', weekStart)
+      
+      // Generate new one
+      await loadOrGenerateSchedule()
+      alert('Cronograma regenerado com sucesso!')
+    } catch (error) {
+      console.error('Error regenerating schedule:', error)
+      // Just regenerate locally
+      const newSchedule = generateScheduleData()
+      setSchedule(newSchedule || [])
+    }
+  }
+
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
       <div className="flex items-center justify-between mb-6">
@@ -330,9 +419,20 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
         >
           ← Semana Anterior
         </button>
-        <h2 className="text-2xl font-bold text-gray-800">
-          Semana Atual
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-gray-800">
+            Semana Atual
+          </h2>
+          {planId && (
+            <button
+              onClick={regenerateSchedule}
+              className="px-3 py-1 text-sm bg-yellow-500 text-white rounded hover:bg-yellow-600"
+              title="Regenerar cronograma desta semana"
+            >
+              🔄
+            </button>
+          )}
+        </div>
         <button
           onClick={() => changeWeek(1)}
           className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"

@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar'
 import Board from './pages/Board'
 import Plan from './pages/Plan'
 import Subjects from './pages/Subjects'
+import Topics from './pages/Topics'
 import Sessions from './pages/Sessions'
 import Reviews from './pages/Reviews'
 import { supabase } from './lib/supabase'
@@ -56,6 +57,8 @@ function App() {
         return <Plan user={user} />
       case 'subjects':
         return <Subjects user={user} />
+      case 'topics':
+        return <Topics user={user} />
       case 'sessions':
         return <Sessions user={user} />
       case 'reviews':
