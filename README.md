@@ -1,4 +1,4 @@
-# 📚 Aplicativo de Cronograma de Estudos
+# 📚 Aplicativo Studium
 
 Sistema completo de gerenciamento de estudos com autenticação, cronômetro, planos de estudo e registro detalhado de sessões.
 

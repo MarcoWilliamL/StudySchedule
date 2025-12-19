@@ -44,7 +44,7 @@ export default function Auth({ onAuthSuccess }) {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
         <h1 className="text-3xl font-bold text-center text-indigo-900 mb-6">
-          📚 Cronograma de Estudos
+          📚 Studium
         </h1>
         
         <form onSubmit={handleAuth} className="space-y-4">
