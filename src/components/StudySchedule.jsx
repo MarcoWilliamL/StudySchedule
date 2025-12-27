@@ -78,9 +78,12 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
 
   function getWeekStart(date) {
     const d = new Date(date)
+    d.setHours(0, 0, 0, 0) // Reset time to midnight
     const day = d.getDay()
     const diff = d.getDate() - day
-    return new Date(d.setDate(diff))
+    const weekStart = new Date(d.setDate(diff))
+    weekStart.setHours(0, 0, 0, 0) // Ensure midnight
+    return weekStart
   }
 
   async function fetchStudySessions() {
@@ -220,11 +223,15 @@ export default function StudySchedule({ subjects, userId, weeklyHours, planId })
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
       const date = new Date(currentWeekStart)
       date.setDate(date.getDate() + dayIndex)
+      date.setHours(0, 0, 0, 0) // Ensure midnight for comparison
+      
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // Ensure midnight for comparison
       
       const daySchedule = {
         date: date.toISOString().split('T')[0],
         dayOfWeek: date.toLocaleDateString('pt-BR', { weekday: 'long' }),
-        isToday: date.toDateString() === new Date().toDateString(),
+        isToday: date.getTime() === today.getTime(),
         subjects: []
       }
       
